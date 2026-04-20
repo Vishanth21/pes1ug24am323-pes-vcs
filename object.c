@@ -134,9 +134,43 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     
     mkdir(shard_dir, 0755); // Ignore error if it already exists
 
-    // TODO: Implement atomic write (temp file, fsync, rename)
+    // 5. Write to a temporary file in the same shard directory
+    char tmp_path[512];
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+
+    int fd = open(tmp_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (fd < 0) {
+        free(full_obj);
+        return -1;
+    }
+
+    if (write(fd, full_obj, full_len) != (ssize_t)full_len) {
+        close(fd);
+        unlink(tmp_path);
+        free(full_obj);
+        return -1;
+    }
+
+    // 6. fsync() the temporary file to ensure data reaches disk
+    fsync(fd);
+    close(fd);
+
+    // 7. rename() the temp file to the final path
+    if (rename(tmp_path, path) < 0) {
+        unlink(tmp_path);
+        free(full_obj);
+        return -1;
+    }
+
+    // 8. Open and fsync() the shard directory to persist the rename
+    int dir_fd = open(shard_dir, O_RDONLY);
+    if (dir_fd >= 0) {
+        fsync(dir_fd);
+        close(dir_fd);
+    }
+
     free(full_obj);
-    return -1;
+    return 0;
 }
 
 // Read an object from the store.
