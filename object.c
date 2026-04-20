@@ -116,9 +116,27 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     // 2. Compute SHA-256 hash of the FULL object (header + data)
     compute_hash(full_obj, full_len, id_out);
 
-    // TODO: Implement the rest (check exists, write to disk)
+    // 3. Check if object already exists (deduplication)
+    if (object_exists(id_out)) {
+        free(full_obj);
+        return 0;
+    }
+
+    // 4. Create shard directory (.pes/objects/XX/) if it doesn't exist
+    char path[512];
+    object_path(id_out, path, sizeof(path));
+    
+    // Get the directory part: .pes/objects/XX
+    char shard_dir[512];
+    char hex[HASH_HEX_SIZE + 1];
+    hash_to_hex(id_out, hex);
+    snprintf(shard_dir, sizeof(shard_dir), "%s/%.2s", OBJECTS_DIR, hex);
+    
+    mkdir(shard_dir, 0755); // Ignore error if it already exists
+
+    // TODO: Implement atomic write (temp file, fsync, rename)
     free(full_obj);
-    return -1; 
+    return -1;
 }
 
 // Read an object from the store.
